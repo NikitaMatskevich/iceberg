@@ -65,10 +65,6 @@ public final class FormatModelRegistry {
   private static final Map<Pair<FileFormat, Class<?>>, FormatModel<?, ?>> MODELS =
       Maps.newConcurrentMap();
 
-  static {
-    registerSupportedFormats();
-  }
-
   /**
    * Registers an {@link FormatModel} in this registry.
    *
@@ -199,14 +195,26 @@ public final class FormatModelRegistry {
     return model;
   }
 
+  static {
+    registerSupportedFormats(CLASSES_TO_REGISTER);
+  }
+
+  @VisibleForTesting
   @SuppressWarnings("CatchBlockLogException")
-  private static void registerSupportedFormats() {
+  static void registerSupportedFormats(List<String> classesToRegister) {
     // Uses dynamic methods to call the `register` for the listed classes
-    for (String classToRegister : CLASSES_TO_REGISTER) {
+    for (String classToRegister : classesToRegister) {
       try {
         DynMethods.builder("register").impl(classToRegister).buildStaticChecked().invoke();
       } catch (NoSuchMethodException e) {
         // failing to register a factory is normal and does not require a stack trace
+        LOG.info(
+            "Unable to call register for ({}). Check for missing jars on the classpath: {}",
+            classToRegister,
+            e.getMessage());
+      } catch (LinkageError e) {
+        // a class was found but could not be linked due to a missing transitive dependency
+        // (e.g. iceberg-orc absent when iceberg-data is on the classpath); this is expected
         LOG.info(
             "Unable to call register for ({}). Check for missing jars on the classpath: {}",
             classToRegister,

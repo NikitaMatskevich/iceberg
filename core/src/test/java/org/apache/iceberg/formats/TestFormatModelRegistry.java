@@ -24,6 +24,7 @@ import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.encryption.EncryptedOutputFile;
 import org.apache.iceberg.io.InputFile;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.util.Pair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,6 +85,29 @@ class TestFormatModelRegistry {
             () -> FormatModelRegistry.register(new DummyParquetFormatModel(Object.class, null)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Cannot register class");
+  }
+
+  @Test
+  void testRegisterSupportedFormatsHandlesLinkageError() {
+    // registerSupportedFormats must not propagate LinkageError thrown when a class that is present
+    // on the compile-time classpath cannot be linked at runtime due to a missing dependency (e.g.
+    // iceberg-orc absent while iceberg-data is present).
+    FormatModelRegistry.registerSupportedFormats(
+        ImmutableList.of(ThrowsLinkageErrorOnRegister.class.getName()));
+    // no exception means the error was swallowed as intended
+  }
+
+  @Test
+  void testRegisterSupportedFormatsHandlesNoSuchMethod() {
+    // Classes that exist on the classpath but have no register() method must be skipped silently.
+    FormatModelRegistry.registerSupportedFormats(ImmutableList.of(String.class.getName()));
+  }
+
+  /** Helper class whose {@code register()} method throws {@link NoClassDefFoundError}. */
+  public static class ThrowsLinkageErrorOnRegister {
+    public static void register() {
+      throw new NoClassDefFoundError("org.apache.iceberg.orc.ORCFormatModel");
+    }
   }
 
   private static class DummyParquetFormatModel implements FormatModel<Object, Object> {
